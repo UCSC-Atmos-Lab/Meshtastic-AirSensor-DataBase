@@ -11,7 +11,6 @@ with open(fileToRead, "r") as file:
 stripCounter = 0
 for i in content:
     content[stripCounter] = i.strip()
-    print(content[stripCounter])
     querryDict = {"Name":"test_file_hello_world","Line":content[stripCounter], "Line Number":stripCounter}
     targetCollection.insert_one(querryDict)
     stripCounter = stripCounter + 1
