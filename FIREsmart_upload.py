@@ -1,23 +1,132 @@
 import paho.mqtt.client as mqtt
 import json
 import time
-import pymongo
 from datetime import datetime
 import os
 import psycopg2
+from psycopg2 import sql
+
 # MQTT broker details
-broker_address = "mqtt.meshtastic.org" #
+broker_address = "mqtt.meshtastic.org"
 port = 1883
-pg_options = {"user":"joey", "host":"localhost", "database":"eureka", "password":"1234", "port":5432} # might have to change the host because my computer is not running the database
+pg_options = {"user":"postgres", "host":"localhost", "database":"eureka", "password":"Charan", "port":5432}
 username = "meshdev"
 password = "large4cats"
-#cluster = pymongo.MongoClient("mongodb+srv://jurvilla:myPword811$@testcluster.1ikxgwz.mongodb.net/?retryWrites=true&w=majority&appName=TestCluster", tls=True, tlsAllowInvalidCertificates=True) #
-#db = cluster["todo_db"] #
-#mqttCollections = [db["todo_collection"]] #
+
+
+node_dict = {}
+
+
 # Topics
-topics = [ #
-    "msh/US/2/e/LongFast/!7d527f20"  # Replace this with your second topic #
-]   #
+topics = [
+    "msh/US/2/json/SensorData/!ba69aec8" 
+]
+
+
+
+def parse_sensor_data(payload):
+    try:
+        data = json.loads(payload)
+        
+        node = data.get('from', None)
+
+        # ignore packet if it is not telemetry
+        if data.get('type', None) != "telemetry":
+            return None
+        
+        payload_data = data.get('payload', {})
+
+        # ignore packet if it is power telemetry (for now)
+        if 'voltage' in payload_data:
+            return None
+
+
+        # get node info from dictionary
+        topic_info = node_dict.get(node, (None, None))
+
+
+        return {
+            'node': node,
+            'topic_id': topic_info[0],
+            'longname': topic_info[1],
+            'pressure': payload_data.get('barometric_pressure', None),
+            'gas': payload_data.get('gas_resistance', None),
+            'iaq': payload_data.get('iaq', None),
+            'humidity': payload_data.get('relative_humidity', None),
+            'temperature': payload_data.get('temperature', None),
+            'timestamp_node': data.get('timestamp', None),
+            
+            # add accurate time later datetime.utcnow()
+        }
+        
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        print(f"Error parsing sensor data: {e}")
+        return None
+
+def insert_to_database(sensor_data):
+
+    try:
+        pg_client = psycopg2.connect(**pg_options)
+        pg_cursor = pg_client.cursor()
+        
+        insert_query = """
+            INSERT INTO airwise_data (node, topic_id, longname, pressure, gas, iaq, humidity, temperature, timestamp_node) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+
+        
+
+
+        pg_cursor.execute(insert_query, (
+            sensor_data['node'],
+            sensor_data['topic_id'],
+            sensor_data['longname'],
+            sensor_data['pressure'],
+            sensor_data['gas'],
+            sensor_data['iaq'],
+            sensor_data['humidity'],
+            sensor_data['temperature'],
+            sensor_data['timestamp_node']
+        ))
+        
+        pg_client.commit()
+        print(f"Data successfully inserted into database - Node: {sensor_data['node']}, Temp: {sensor_data['temperature']}°C, Humidity: {sensor_data['humidity']}%")
+        
+        pg_cursor.close()
+        pg_client.close()
+        
+    except psycopg2.Error as e:
+        print(f"Database error: {e}")
+        if 'pg_client' in locals():
+            pg_client.rollback()
+    except Exception as e:
+        print(f"Unexpected error during database insertion: {e}")
+    finally:
+        # close connections 
+        if 'pg_cursor' in locals() and pg_cursor:
+            pg_cursor.close()
+        if 'pg_client' in locals() and pg_client:
+            pg_client.close()
+
+
+
+# maps the unique "from" number to the topic id and longname using node_info packets
+def map_nodes(payload):
+
+    data = json.loads(payload)
+
+    if data.get('type', None) != "node_info":
+        return None
+    
+    payload_data = data.get('payload', {})
+    topic_id = payload_data.get('id')
+    longname = payload_data.get('longname')
+    node = data.get('from', None)
+
+    if node is not None and topic_id is not None and longname is not None:
+        node_dict[node] = (topic_id, longname)
+
+
 
 def on_connect(client, userdata, flags, reason_code, properties):
     print(f"Connected with result code {reason_code}")
@@ -32,43 +141,25 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_message(client, userdata, msg):
     print(f"Received message on topic: {msg.topic}")
     try:
-        #time.sleep(15) #added_sleep
-        payload = msg.payload.decode() 
-        print("Here is the payload: ", payload)
-        pg_client = psycopg2.connect(pg_options)
-        pgQuery = " INSERT INTO sensor_data (temp, humidity, soil_moisture, wind_speed, wind_direction, 2.5PM, 1PM, 10PM, AIQ, barometric_pressure, rainfall, methane) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"
-        values = payload # we will need to get out values out of string format
-        pg_cursor = pg_client.cursor()
-        pg_cursor.execute(pgQuery, values)
-        #mqttCollections[0].insert_one({"collection" : "todo_collection",
-                                        #"message" : payload,
-                                        #})
-        
+        #decode payload
+        payload = msg.payload.decode()
 
-        # elif payload["type"] == "telemetry" and "battery_level" not in payload["payload"]: # TODO: add barometry if relevant
-        #     mqttCollections[1].insert_one({"id" : payload["id"],
-        #                                    #"device" : payload["sender"],
-        #                                    "date" : datetime.fromtimestamp(int(payload["timestamp"])),
-        #                                    "barometric_pressure" : payload["payload"]["barometric_pressure"] if "barometric_pressure" in payload["payload"] else None,
-        #                                    "gas_resistance" : payload["payload"]["gas_resistance"] if "gas_resistance" in payload["payload"] else None,
-        #                                    "air_quality" : payload["payload"]["iaq"] if "iaq" in payload["payload"] else None,
-        #                                    "humidity" : payload["payload"]["relative_humidity"] if "relative_humidity" in payload["payload"] else None,
-        #                                    "wind_speed" : payload["payload"]["wind_speed"] if "wind_speed" in payload["payload"] else None,
-        #                                    "light" : payload["payload"]["lux"] if "lux" in payload["payload"] else None,
-        #                                    "temperature_f" : round(payload["payload"]["temperature"] * 9/5 + 32, 1) if "temperature" in payload["payload"] else None
-        #                                    })
-        # else:
-        #     mqttCollections[2].insert_one({"id" : payload["id"],
-        #                                    #"device" : payload["sender"],
-        #                                    "battery" : payload["payload"]["battery_level"] if "battery_level" in payload["payload"] else None, # battery screws up everything in telemetry, so it is added here
-        #                                    "type" : payload["type"]
-        #                                    })
-        # print("Upload Service working!")
-        # print("Decoded JSON:")
-        # print(json.dumps(payload, indent=2))
-    except json.JSONDecodeError as e:
-        print(f"Failed to decode JSON. Error: {e}")
-        print(f"Raw message content: {msg.payload.decode()}")
+        #maps nodes
+        map_nodes(payload)
+
+
+        print("Here is the payload: ", payload)
+        
+        #parse data
+        sensor_data = parse_sensor_data(payload)
+
+        #insert data
+        if sensor_data:
+            insert_to_database(sensor_data)
+        else:
+            print("Failed to parse sensor data, skipping database insertion")
+        
+            
     except Exception as e:
         print(f"An unexpected error occurred while processing the message: {e}")
 
@@ -78,22 +169,50 @@ def on_disconnect(client, userdata, rc, properties=None, reason_code=None):
     else:
         print("Unexpected disconnection with result code:", rc)
 
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-client.username_pw_set(username, password)
+# Test database connection on startup
+def test_database_connection():
+    try:
+        pg_client = psycopg2.connect(**pg_options)
+        pg_cursor = pg_client.cursor()
+        pg_cursor.execute("SELECT version();")
+        version = pg_cursor.fetchone()
+        print(f"Successfully connected to PostgreSQL: {version[0]}")
+        pg_cursor.close()
+        pg_client.close()
+        return True
+    except Exception as e:
+        print(f"Failed to connect to database: {e}")
+        return False
 
-client.on_connect = on_connect
-client.on_message = on_message
-client.on_disconnect = on_disconnect
 
-print(f"Connecting to {broker_address}:{port}")
-client.connect(broker_address, port, 60)
 
-try:
-    print("Starting the MQTT loop...")
-    client.loop_forever()
-except KeyboardInterrupt:
-    print("Script interrupted by user")
-    client.disconnect()
-except Exception as e:
-    print(f"An error occurred: {e}")
-    client.disconnect()
+
+
+
+
+# main loop
+
+if __name__ == "__main__":
+    if not test_database_connection():
+        print("Exiting due to database connection failure")
+        exit(1)
+    
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    client.username_pw_set(username, password)
+
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.on_disconnect = on_disconnect
+
+    print(f"Connecting to {broker_address}:{port}")
+    client.connect(broker_address, port, 60)
+
+    try:
+        print("Starting the MQTT loop...")
+        client.loop_forever()
+    except KeyboardInterrupt:
+        print("Script interrupted by user")
+        client.disconnect()
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        client.disconnect()
