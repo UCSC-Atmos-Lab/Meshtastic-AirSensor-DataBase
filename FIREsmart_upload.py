@@ -32,12 +32,14 @@ def parse_sensor_data(payload):
 
         # ignore packet if it is not telemetry
         if data.get('type', None) != "telemetry":
+            print("Not telemetry packet, ignoring")
             return None
         
         payload_data = data.get('payload', {})
 
         # ignore packet if it is power telemetry (for now)
-        if 'voltage' in payload_data:
+        if 'battery_level' in payload_data:
+            print("Power telemetry packet, ignoring")
             return None
 
 
@@ -91,7 +93,8 @@ def insert_to_database(sensor_data):
         
         pg_client.commit()
         print(f"Data successfully inserted into database - Node: {sensor_data['node']}, Temp: {sensor_data['temperature']}°C, Humidity: {sensor_data['humidity']}%")
-        
+        print()
+
         pg_cursor.close()
         pg_client.close()
         
@@ -115,8 +118,10 @@ def map_nodes(payload):
 
     data = json.loads(payload)
 
-    if data.get('type', None) != "node_info":
+    if data.get('type', None) != "nodeinfo":
         return None
+    
+    print("--------------------Node info packet received, mapping node------------------------------")
     
     payload_data = data.get('payload', {})
     topic_id = payload_data.get('id')
@@ -153,11 +158,16 @@ def on_message(client, userdata, msg):
         #parse data
         sensor_data = parse_sensor_data(payload)
 
+        print()
+        print("Node mapping: ", node_dict)
+        print()
+
         #insert data
         if sensor_data:
             insert_to_database(sensor_data)
         else:
             print("Failed to parse sensor data, skipping database insertion")
+            print()
         
             
     except Exception as e:
@@ -195,6 +205,7 @@ def test_database_connection():
 if __name__ == "__main__":
     if not test_database_connection():
         print("Exiting due to database connection failure")
+        
         exit(1)
     
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
