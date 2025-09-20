@@ -141,9 +141,6 @@ def insert_to_database(sensor_data):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
 
-        
-
-
         pg_cursor.execute(insert_query, (
             sensor_data['node'],
             sensor_data['topic_id'],
@@ -283,11 +280,11 @@ if __name__ == "__main__":
 
 
 
-    # --- TEST: pretend farm1 (!ba654d80, from=3127201152) went silent ---
-    node_dict[3127201152] = ("!ba654d80", "Farm1")          
-    node_heartbeats[3127201152] = datetime.now() - timedelta(minutes=10) 
-    node_alerts_sent.pop(3127201152, None)                  
-    # ------------------------------------------------------------------------------
+    # # --- TEST: pretend farm1 (!ba654d80, from=3127201152) went silent ---
+    # node_dict[3127201152] = ("!ba654d80", "Farm1")          
+    # node_heartbeats[3127201152] = datetime.now() - timedelta(minutes=10) 
+    # node_alerts_sent.pop(3127201152, None)                  
+    # # ------------------------------------------------------------------------------
     
     # Start the heartbeat checker thread
     heartbeat_thread = threading.Thread(target=check_node_heartbeats, daemon=True)
