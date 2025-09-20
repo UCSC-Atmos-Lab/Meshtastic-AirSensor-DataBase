@@ -1,10 +1,12 @@
 import paho.mqtt.client as mqtt
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import psycopg2
 from psycopg2 import sql
+import threading
+import requests
 
 # MQTT broker details
 broker_address = "mqtt.meshtastic.org"
@@ -13,16 +15,78 @@ pg_options = {"user":"postgres", "host":"localhost", "database":"eureka", "passw
 username = "meshdev"
 password = "large4cats"
 
+# Ntfy
+NTFY_URL = "https://ntfy.sh/FIRESMART_Alerts"
+OFFLINE_THRESHOLD_MINUTES = 150
 
-node_dict = {}
 
+# maps nodes
+node_dict = {} 
+
+# tracks last time we saw a message from each node
+node_heartbeats = {}
+
+#prevents multiple alerts for one offline node
+node_alerts_sent = {}
 
 # Topics
 topics = [
     "msh/US/2/json/SensorData/!ba69aec8" 
+    
 ]
 
+def send_ntfy_alert(node_id, longname=None):
+    try:
+        if longname:
+            message = f" Node OFFLINE: {longname} (ID: {node_id}) - No heartbeat for {OFFLINE_THRESHOLD_MINUTES} minutes"
+        else:
+            message = f" Node OFFLINE: {node_id} - No heartbeat for {OFFLINE_THRESHOLD_MINUTES} minutes"
 
+
+        response = requests.post(NTFY_URL, data=message.encode('utf-8'), headers={"Title": "FIRESMART Node Alert", "Priority": "high", "Tags": "warning, rotating_light"})
+        
+        if response.status_code == 200:
+            print(f"Alert sent successfully for node {node_id}")
+        else:
+            print(f"Failed to send alert for node {node_id}: {response.status_code}")
+            
+    except Exception as e:
+        print(f"Error sending ntfy alert: {e}")
+
+
+
+# checks every minute for offline nodes
+def check_node_heartbeats():
+    while True:
+        try:
+            current_time = datetime.now()
+            threshold = timedelta(minutes=OFFLINE_THRESHOLD_MINUTES)
+            
+            #check every node
+            for node_id, last_seen in list(node_heartbeats.items()):
+                time_since_last = current_time - last_seen
+                
+                # check if node is offline
+                if time_since_last > threshold:
+                    if not node_alerts_sent.get(node_id, False): # send one alert
+                        node_info = node_dict.get(node_id, (None, None))
+                        longname = node_info[1] if node_info else None
+                        
+                        print(f"Node {node_id} ({longname}) is OFFLINE - Last seen: {last_seen}")
+                        send_ntfy_alert(node_id, longname)
+                        node_alerts_sent[node_id] = True
+                else:
+                    # node is back online
+                    if node_alerts_sent.get(node_id, False):
+                        node_alerts_sent[node_id] = False
+                        print(f"Node {node_id} is back ONLINE")
+            
+            
+            time.sleep(600) # EVERY 10 MINUTES
+            
+        except Exception as e:
+            print(f"Error in heartbeat checker: {e}")
+            time.sleep(600)  
 
 def parse_sensor_data(payload):
     try:
@@ -130,6 +194,14 @@ def map_nodes(payload):
 
     if node is not None and topic_id is not None and longname is not None:
         node_dict[node] = (topic_id, longname)
+    
+    # Update heartbeat timestamp
+    if node is not None:
+        node_heartbeats[node] = datetime.now()
+        # reset alert flag if back online
+        if node_alerts_sent.get(node, False):
+            node_alerts_sent[node] = False
+            print(f"Node {node} ({longname}) is back ONLINE - heartbeat received")
 
 
 
@@ -207,6 +279,20 @@ if __name__ == "__main__":
         print("Exiting due to database connection failure")
         
         exit(1)
+
+
+
+    # --- TEST: pretend farm1 (!ba654d80, from=3127201152) went silent ---
+    node_dict[3127201152] = ("!ba654d80", "Farm1")          
+    node_heartbeats[3127201152] = datetime.now() - timedelta(minutes=10) 
+    node_alerts_sent.pop(3127201152, None)                  
+    # ------------------------------------------------------------------------------
+    
+    # Start the heartbeat checker thread
+    heartbeat_thread = threading.Thread(target=check_node_heartbeats, daemon=True)
+    heartbeat_thread.start()
+    print("Started heartbeat monitoring thread")
+    print(node_dict)
     
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.username_pw_set(username, password)
@@ -217,6 +303,11 @@ if __name__ == "__main__":
 
     print(f"Connecting to {broker_address}:{port}")
     client.connect(broker_address, port, 60)
+
+
+    # online alert- don't need if trying to get under max 250 messages per day
+    requests.post(NTFY_URL, data=b"Monitor started: subscribed and listening.", headers={"Title":"FIRESMART Monitor Online","Priority":"default","Tags":"white_check_mark"})
+
 
     try:
         print("Starting the MQTT loop...")
