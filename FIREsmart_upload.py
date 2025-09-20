@@ -38,13 +38,14 @@ topics = [
 def send_ntfy_alert(node_id, longname=None):
     try:
         if longname:
-            message = f" Node OFFLINE: {longname} (ID: {node_id}) - No heartbeat for {OFFLINE_THRESHOLD_MINUTES} minutes"
+            message = f" Node OFFLINE: {longname} (**ID: {node_id}**) - No message for {OFFLINE_THRESHOLD_MINUTES} minutes"
         else:
-            message = f" Node OFFLINE: {node_id} - No heartbeat for {OFFLINE_THRESHOLD_MINUTES} minutes"
+            message = f" Node OFFLINE: **{node_id}** - No message for {OFFLINE_THRESHOLD_MINUTES} minutes"
 
 
-        response = requests.post(NTFY_URL, data=message.encode('utf-8'), headers={"Title": "FIRESMART Node Alert", "Priority": "high", "Tags": "warning, rotating_light"})
-        
+        response = requests.post(NTFY_URL, data=message.encode('utf-8'), headers={"Title": "FIRESMART Node Alert", "Priority": "high", "Tags": "warning, rotating_light", "Markdown": "yes"})
+        #could add an image in the message of where the node is located on the farm, once we place the nodes...
+
         if response.status_code == 200:
             print(f"Alert sent successfully for node {node_id}")
         else:
