@@ -17,7 +17,7 @@ password = "large4cats"
 
 # Ntfy
 NTFY_URL = "https://ntfy.sh/FIRESMART_Alerts"
-OFFLINE_THRESHOLD_MINUTES = 150
+OFFLINE_THRESHOLD_MINUTES = 150 # every 150 minutes right now because nodealert sends 1 message per hour
 
 
 # maps nodes
@@ -249,7 +249,6 @@ def on_disconnect(client, userdata, rc, properties=None, reason_code=None):
     else:
         print("Unexpected disconnection with result code:", rc)
 
-# Test database connection on startup
 def test_database_connection():
     try:
         pg_client = psycopg2.connect(**pg_options)
@@ -312,7 +311,11 @@ if __name__ == "__main__":
         client.loop_forever()
     except KeyboardInterrupt:
         print("Script interrupted by user")
+        requests.post(NTFY_URL, data=b"Keyboard interrupt, disconnecting", headers={"Title":"FIRESMART Monitor OFFLINE","Priority":"high","Tags":"warning"})
+
         client.disconnect()
     except Exception as e:
         print(f"An error occurred: {e}")
+        requests.post(NTFY_URL, data=b"Error occurred: disconnecting", headers={"Title":"FIRESMART Monitor OFFLINE","Priority":"high","Tags":"warning"})
+
         client.disconnect()
