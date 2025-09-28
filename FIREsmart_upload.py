@@ -19,9 +19,10 @@ password = "large4cats"
 NTFY_URL = "https://ntfy.sh/FIRESMART_Alerts"
 OFFLINE_THRESHOLD_MINUTES = 150 # every 150 minutes right now because nodealert sends 1 message per hour
 
+
+# for sending notification once node comes bakc online
 NTFY_TIMEOUT = 5
 SEND_RECOVERY = True
-
 
 # maps nodes
 node_dict = {} 
@@ -91,8 +92,6 @@ def check_node_heartbeats():
                         timeout=NTFY_TIMEOUT
                     )       
                     print(f"Node {node_id} is back ONLINE")
-
-            
             
             time.sleep(600) # EVERY 10 MINUTES
             
