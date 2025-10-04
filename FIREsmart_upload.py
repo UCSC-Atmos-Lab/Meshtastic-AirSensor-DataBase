@@ -20,10 +20,6 @@ NTFY_URL = "https://ntfy.sh/FIRESMART_Alerts"
 OFFLINE_THRESHOLD_MINUTES = 150 # every 150 minutes right now because nodealert sends 1 message per hour
 
 
-# for sending notification once node comes bakc online
-NTFY_TIMEOUT = 5
-SEND_RECOVERY = True
-
 # maps nodes
 node_dict = {} 
 
@@ -81,17 +77,11 @@ def check_node_heartbeats():
                         send_ntfy_alert(node_id, longname)
                         node_alerts_sent[node_id] = True
                 else:
-    # node is back online
+                    # node is back online
                     if node_alerts_sent.get(node_id, False):
                         node_alerts_sent[node_id] = False
-                    if SEND_RECOVERY:
-                        requests.post(
-                        NTFY_URL,
-                        data=f"Node ONLINE: { (node_dict.get(node_id, (None, None))[1]) or node_id }".encode(),
-                        headers={"Title": "FIRESMART Node Recovery", "Priority": "default", "Tags": "white_check_mark"},
-                        timeout=NTFY_TIMEOUT
-                    )       
-                    print(f"Node {node_id} is back ONLINE")
+                        print(f"Node {node_id} is back ONLINE")
+            
             
             time.sleep(600) # EVERY 10 MINUTES
             
@@ -209,15 +199,7 @@ def map_nodes(payload):
         # reset alert flag if back online
         if node_alerts_sent.get(node, False):
             node_alerts_sent[node] = False
-            if SEND_RECOVERY:
-                requests.post(
-                    NTFY_URL,
-                    data=f"Node ONLINE: {longname or node}".encode(),
-                    headers={"Title": "FIRESMART Node Recovery", "Priority": "default", "Tags": "white_check_mark"},
-                    timeout=NTFY_TIMEOUT
-                )
-        print(f"Node {node} ({longname}) is back ONLINE - heartbeat received")
-
+            print(f"Node {node} ({longname}) is back ONLINE - heartbeat received")
 
 
 
