@@ -35,7 +35,6 @@ topics = [
     
 ]
 
-
 # Initialize node_dict with known nodes
 node_dict = {
     3127201152: ('!ba654d80', 'Farm1'),
