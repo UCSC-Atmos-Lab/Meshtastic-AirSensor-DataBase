@@ -35,6 +35,15 @@ topics = [
     
 ]
 
+
+# Initialize node_dict with known nodes
+node_dict = {
+    3127201152: ('!ba654d80', 'Farm1'),
+    3127202788: ('!ba6553e4', 'Farm4'),
+    3127488536: ('!ba69b018', 'Farm3'),
+    3127488200: ('!ba69aec8', 'Farm5')
+}
+
 def send_ntfy_alert(node_id, longname=None):
     try:
         if longname:
@@ -119,6 +128,9 @@ def parse_sensor_data(payload):
                 'voltage': payload_data.get('voltage', None),
                 'battery_level': payload_data.get('battery_level', None),
                 'timestamp_node': data.get('timestamp', None),
+                'pst_time': datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
+
+                
                 
 
             }
@@ -133,8 +145,7 @@ def parse_sensor_data(payload):
             'humidity': payload_data.get('relative_humidity', None),
             'temperature': payload_data.get('temperature', None),
             'timestamp_node': data.get('timestamp', None),
-            
-            # add accurate time later datetime.utcnow()
+            'pst_time': datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
         }
         
     except (json.JSONDecodeError, ValueError, KeyError) as e:
@@ -154,9 +165,9 @@ def insert_to_database(sensor_data):
 
         if dest == 'battery_data':
             insert_query = """
-                INSERT INTO battery_data (node, topic_id, longname, voltage, battery_level)
-                VALUES (%s, %s, %s, %s, %s)
-            """            
+                INSERT INTO battery_data (node, topic_id, longname, voltage, battery_level, pst_time)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
 
             params = (
                 sensor_data['node'],
@@ -164,6 +175,7 @@ def insert_to_database(sensor_data):
                 sensor_data['longname'],
                 sensor_data.get('voltage'),
                 sensor_data.get('battery_level'),
+                sensor_data.get('pst_time'),
             )
             pg_cursor.execute(insert_query, params)
             pg_client.commit()
@@ -174,8 +186,8 @@ def insert_to_database(sensor_data):
                    
         elif dest == 'airwise_data':
             insert_query = """
-                INSERT INTO airwise_data (node, topic_id, longname, pressure, gas, iaq, humidity, temperature, timestamp_node) 
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO airwise_data (node, topic_id, longname, pressure, gas, iaq, humidity, temperature, timestamp_node, pst_time)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             params = (
                 sensor_data['node'],
@@ -187,6 +199,7 @@ def insert_to_database(sensor_data):
                 sensor_data.get('humidity'),
                 sensor_data.get('temperature'),
                 sensor_data.get('timestamp_node'),
+                sensor_data.get('pst_time'),
             )
             pg_cursor.execute(insert_query, params)
             pg_client.commit()
