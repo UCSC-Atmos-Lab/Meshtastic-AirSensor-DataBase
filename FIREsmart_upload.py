@@ -37,10 +37,13 @@ topics = [
 
 # Initialize node_dict with known nodes
 node_dict = {
+
     3127201152: ('!ba654d80', 'Farm1'),
+    3127206628: ('!ba6562e4', 'Farm2'),
     3127202788: ('!ba6553e4', 'Farm4'),
     3127488536: ('!ba69b018', 'Farm3'),
-    3127488200: ('!ba69aec8', 'Farm5')
+    3127488200: ('!ba69aec8', 'Farm5'),
+    2102560276: ('!7d528614', 'Farm6'),
 }
 
 def send_ntfy_alert(node_id, longname=None):
