@@ -102,15 +102,26 @@ def parse_sensor_data(payload):
         
         payload_data = data.get('payload', {})
 
-        # ignore packet if it is power telemetry (for now)
-        if 'battery_level' in payload_data:
-            print("Power telemetry packet, ignoring")
-            return None
+
 
 
         # get node info from dictionary
         topic_info = node_dict.get(node, (None, None))
 
+
+        #save telemetry data
+        if 'battery_level' in payload_data:
+            print("Power telemetry packet, SAVING")
+            return {
+                'node': node,
+                'topic_id': topic_info[0],
+                'longname': topic_info[1],
+                'voltage': payload_data.get('voltage', None),
+                'battery_level': payload_data.get('battery_level', None),
+                'timestamp_node': data.get('timestamp', None),
+                
+
+            }
 
         return {
             'node': node,
@@ -135,28 +146,58 @@ def insert_to_database(sensor_data):
     try:
         pg_client = psycopg2.connect(**pg_options)
         pg_cursor = pg_client.cursor()
-        
-        insert_query = """
-            INSERT INTO airwise_data (node, topic_id, longname, pressure, gas, iaq, humidity, temperature, timestamp_node) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
+        dest = None
+        if 'battery_level' in sensor_data:
+            dest = 'battery_data'
+        elif 'temperature' in sensor_data:
+            dest = 'airwise_data'
 
-        pg_cursor.execute(insert_query, (
-            sensor_data['node'],
-            sensor_data['topic_id'],
-            sensor_data['longname'],
-            sensor_data['pressure'],
-            sensor_data['gas'],
-            sensor_data['iaq'],
-            sensor_data['humidity'],
-            sensor_data['temperature'],
-            sensor_data['timestamp_node']
-        ))
-        
-        pg_client.commit()
-        print(f"Data successfully inserted into database - Node: {sensor_data['node']}, Temp: {sensor_data['temperature']}°C, Humidity: {sensor_data['humidity']}%")
+        if dest == 'battery_data':
+            insert_query = """
+                INSERT INTO battery_data (node, topic_id, longname, voltage, battery_level)
+                VALUES (%s, %s, %s, %s, %s)
+            """            
+
+            params = (
+                sensor_data['node'],
+                sensor_data['topic_id'],
+                sensor_data['longname'],
+                sensor_data.get('voltage'),
+                sensor_data.get('battery_level'),
+            )
+            pg_cursor.execute(insert_query, params)
+            pg_client.commit()
+
+            print(f"Battery inserted -> node {sensor_data['node']}, "
+                f"V={sensor_data.get('voltage')}, "
+                f"Lvl={sensor_data.get('battery_level')}")
+                   
+        elif dest == 'airwise_data':
+            insert_query = """
+                INSERT INTO airwise_data (node, topic_id, longname, pressure, gas, iaq, humidity, temperature, timestamp_node) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            params = (
+                sensor_data['node'],
+                sensor_data['topic_id'],
+                sensor_data['longname'],
+                sensor_data.get('pressure'),
+                sensor_data.get('gas'),
+                sensor_data.get('iaq'),
+                sensor_data.get('humidity'),
+                sensor_data.get('temperature'),
+                sensor_data.get('timestamp_node'),
+            )
+            pg_cursor.execute(insert_query, params)
+            pg_client.commit()
+            print(f"Env inserted -> node {sensor_data['node']}, "
+                  f"T={sensor_data.get('temperature')}°C, "
+                  f"RH={sensor_data.get('humidity')}%")
+        else:
+            print("Unknown destination table; skipping insert.")
+
+
         print()
-
         pg_cursor.close()
         pg_client.close()
         
