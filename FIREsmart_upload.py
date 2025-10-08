@@ -17,7 +17,7 @@ password = "large4cats"
 
 # Ntfy
 NTFY_URL = "https://ntfy.sh/FIRESMART_Alerts"
-OFFLINE_THRESHOLD_MINUTES = 150 # every 150 minutes right now because nodealert sends 1 message per hour
+OFFLINE_THRESHOLD_MINUTES = 100 # every 100 minutes right now because nodealert sends 1 message every 15 minutes
 
 
 # maps nodes
@@ -54,7 +54,7 @@ def send_ntfy_alert(node_id, longname=None):
             message = f" Node OFFLINE: **{node_id}** - No message for {OFFLINE_THRESHOLD_MINUTES} minutes"
 
 
-        response = requests.post(NTFY_URL, data=message.encode('utf-8'), headers={"Title": "FIRESMART Node Alert", "Priority": "high", "Tags": "warning, rotating_light", "Markdown": "yes"})
+        response = requests.post(NTFY_URL, data=message.encode('utf-8'), headers={"Title": "FIRESMART Node Alert", "Priority": "high", "Tags": "rotating_light", "Markdown": "yes"})
         #could add an image in the message of where the node is located on the farm, once we place the nodes...
 
         if response.status_code == 200:
