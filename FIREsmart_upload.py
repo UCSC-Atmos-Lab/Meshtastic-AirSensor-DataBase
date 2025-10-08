@@ -31,8 +31,8 @@ node_alerts_sent = {}
 
 # Topics
 topics = [
-    # "msh/US/2/json/SensorData/!ba69aec8",
-    "msh/US/2/json/SensorData/!ba6562e4"
+    "msh/US/2/json/SensorData/!ba69aec8"
+    # "msh/US/2/json/SensorData/!ba6562e4"
 ]
 
 # Initialize node_dict with known nodes
@@ -359,10 +359,8 @@ if __name__ == "__main__":
 
 
     # online alert- don't need if trying to get under max 250 messages per day
-    # Notify with the list of subscribed topics
     topics_str = ", ".join(topics)
-    requests.post(NTFY_URL,data=f"Monitor started: subscribed and listening to {topics_str}".encode("utf-8"), headers={"Title": "FIRESMART Monitor Online", "Priority": "default", "Tags": "white_check_mark"},
-    )
+    requests.post(NTFY_URL,data=f"Monitor started: subscribed and listening to {topics_str}".encode("utf-8"), headers={"Title": "FIRESMART Monitor Online", "Priority": "default", "Tags": "white_check_mark"},)
 
 
     try:
