@@ -176,7 +176,7 @@ def parse_battery_data(payload):
             print("Not data packet, ignoring")
             return None
         
-        payload_data = data.get('payload', {})
+        payload_data = data.get('payload') or {}
 
         # get node info from dictionary
         topic_info = node_dict.get(node, (None, None))
@@ -202,13 +202,14 @@ def insert_to_database(sensor_data, battery_data):
     try:
         pg_client = psycopg2.connect(**pg_options)
         pg_cursor = pg_client.cursor()
+        if(battery_data):
 
-        insert_query = """
+            insert_query = """
                 INSERT INTO battery_data (node, topic_id, longname, voltage, battery_level, pst_time)
                 VALUES (%s, %s, %s, %s, %s, %s)
             """
 
-        params = (
+            params = (
             battery_data['node'],
             battery_data['topic_id'],
             battery_data['longname'],
@@ -216,18 +217,22 @@ def insert_to_database(sensor_data, battery_data):
             battery_data.get('battery_level'),
             battery_data.get('pst_time'),
         )
-        pg_cursor.execute(insert_query, params)
-        pg_client.commit()
+            pg_cursor.execute(insert_query, params)
+            pg_client.commit()
 
-        print(f"Battery inserted -> node {battery_data['node']}, "
+            print(f"Battery inserted -> node {battery_data['node']}, "
             f"V={battery_data.get('voltage')}, "
             f"Lvl={battery_data.get('battery_level')}")
-                   
-        insert_query = """
+        else:
+            print("Skipping battery insertion, no battery data received")
+
+        if(sensor_data):
+
+            insert_query = """
                 INSERT INTO airwise_data (node, topic_id, longname, temperature, humidity, pressure, gas, pm1_0, pm2_5, pm10, timestamp_node, pst_time)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
-        params = (
+            params = (
                 sensor_data['node'],
                 sensor_data['topic_id'],
                 sensor_data['longname'],
@@ -241,13 +246,14 @@ def insert_to_database(sensor_data, battery_data):
                 sensor_data.get('timestamp_node'),
                 sensor_data.get('pst_time'),
         )
-        pg_cursor.execute(insert_query, params)
-        pg_client.commit()
-        print(f"Env inserted -> node {sensor_data['node']}, "
+            pg_cursor.execute(insert_query, params)
+            pg_client.commit()
+            print(f"Env inserted -> node {sensor_data['node']}, "
                   f"T={sensor_data.get('temperature')}°C, "
-                  f"RH={sensor_data.get('humidity')}%"f", "
+                  f"RH={sensor_data.get('humidity')}%, "
                   f"PM2.5={sensor_data.get('pm2_5')}µg/m3")
-
+        else:
+            print("Skipping sensor insertion, no sensor data received")
         print()
         pg_cursor.close()
         pg_client.close()
@@ -328,12 +334,9 @@ def on_message(client, userdata, msg):
         print()
 
         #insert data
-        if sensor_data:
-            insert_to_database(sensor_data, battery_data)
-        else:
-            print("Failed to parse sensor data, skipping database insertion")
-            print()
-        
+
+        insert_to_database(sensor_data, battery_data)
+
             
     except Exception as e:
         print(f"An unexpected error occurred while processing the message: {e}")
