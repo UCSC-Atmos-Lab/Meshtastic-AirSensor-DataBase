@@ -38,14 +38,21 @@ topics = [
 
 # Initialize node_dict with known nodes
 node_dict = {
-
-    3127201152: ('!ba654d80', 'Farm1'),
-    3127206628: ('!ba6562e4', 'Farm2'),
-    3127202788: ('!ba6553e4', 'Farm4'),
-    3127488536: ('!ba69b018', 'Farm3'),
-    3127488200: ('!ba69aec8', 'Farm5'),
-    2102560276: ('!7d528614', 'Farm6'),
+"""
+ENTER KNOWN NODES HERE
+"""
 }
+
+#payload":{"text":"23.35,41.69,985.34,185623.00,1.00,1.00,1.00,4.98,148.62\n"
+#Received message on topic: msh/US/2/json/SensorData/!7d528614
+# payload:  {"channel":0,"from":2102560276,"hop_start":7,"hops_away":0,"id":4072374199,"payload":{"air_util_tx":0.438472211360931,"battery_level":101,"channel_utilization":2.71000003814697,"uptime_seconds":1263,"voltage":0},"sender":"!7d528614","timestamp":1760748340,"to":4294967295,"type":"telemetry"}
+
+
+#Battery inserted -> node 2102560276, V=0, Lvl=101
+#payload:  {"channel":0,"from":2102560288,"hop_start":7,"hops_away":0,"id":3572686211,
+# "payload":{"text":"23.35,41.69,985.34,185623.00,1.00,1.00,1.00,4.98,148.62\n"},"rssi":-5,
+# "sender":"!7d528614","snr":7.25,"timestamp":1760748353,"to":4294967295,"type":"text"}
+
 
 def send_ntfy_alert(node_id, longname=None):
     try:
@@ -101,52 +108,54 @@ def check_node_heartbeats():
             print(f"Error in heartbeat checker: {e}")
             time.sleep(600)  
 
-def parse_sensor_data(payload):
+
+
+
+#payload:  {"channel":0,"from":2102560288,"hop_start":7,"hops_away":0,"id":3572686211,
+# "payload":{"text":"23.35,41.69,985.34,185623.00,1.00,1.00,1.00,4.98,148.62\n"},"rssi":-5,
+# "sender":"!7d528614","snr":7.25,"timestamp":1760748353,"to":4294967295,"type":"text"}
+
+def parse_text_data(payload):
     try:
         data = json.loads(payload)
         
         node = data.get('from', None)
 
-        # ignore packet if it is not telemetry
-        if data.get('type', None) != "telemetry":
-            print("Not telemetry packet, ignoring")
+        # ignore packet if it is not text
+        if data.get('type', None) != "text":
+            print("Not data packet, ignoring")
             return None
-        
-        payload_data = data.get('payload', {})
 
+        payload_data = data.get('payload') or {}
+        text = payload_data.get('text', '')
 
+        parts = []
+        for field in text.strip().split(","):
+            trimmed = field.strip()
+            if trimmed:
+                parts.append(trimmed)
 
+        values = []
+        for p in parts:
+            values.append(float(p))
 
         # get node info from dictionary
         topic_info = node_dict.get(node, (None, None))
-
-
-        #save telemetry data
-        if 'battery_level' in payload_data:
-            print("Power telemetry packet, SAVING")
-            return {
-                'node': node,
-                'topic_id': topic_info[0],
-                'longname': topic_info[1],
-                'voltage': payload_data.get('voltage', None),
-                'battery_level': payload_data.get('battery_level', None),
-                'timestamp_node': data.get('timestamp', None),
-                'pst_time': datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
-
-                
-                
-
-            }
 
         return {
             'node': node,
             'topic_id': topic_info[0],
             'longname': topic_info[1],
-            'pressure': payload_data.get('barometric_pressure', None),
-            'gas': payload_data.get('gas_resistance', None),
-            'iaq': payload_data.get('iaq', None),
-            'humidity': payload_data.get('relative_humidity', None),
-            'temperature': payload_data.get('temperature', None),
+            'temperature': values[0],
+            'humidity': values[1],
+            'pressure': values[2],
+            'gas': values[3],
+            'pm1_0': values[4],
+            'pm2_5': values[5],
+            'pm10': values[6],
+            'bus_voltage': values[7],
+            'current_mA': values[8],
+
             'timestamp_node': data.get('timestamp', None),
             'pst_time': datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
         }
@@ -155,63 +164,90 @@ def parse_sensor_data(payload):
         print(f"Error parsing sensor data: {e}")
         return None
 
-def insert_to_database(sensor_data):
+
+
+def parse_battery_data(payload):
+    try:
+        data = json.loads(payload)
+        
+        node = data.get('from', None)
+
+        # ignore packet if it is not battery telemetry
+        if data.get('type', None) != "telemetry":
+            print("Not data packet, ignoring")
+            return None
+        
+        payload_data = data.get('payload', {})
+
+        # get node info from dictionary
+        topic_info = node_dict.get(node, (None, None))
+
+        return {
+                'node': node,
+                'topic_id': topic_info[0],
+                'longname': topic_info[1],
+                'voltage': payload_data.get('voltage', None),
+                'battery_level': payload_data.get('battery_level', None),
+                'timestamp_node': data.get('timestamp', None),
+                'pst_time': datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
+        }
+
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        print(f"Error parsing sensor data: {e}")
+        return None
+
+
+
+def insert_to_database(sensor_data, battery_data):
 
     try:
         pg_client = psycopg2.connect(**pg_options)
         pg_cursor = pg_client.cursor()
-        dest = None
-        if 'battery_level' in sensor_data:
-            dest = 'battery_data'
-        elif 'temperature' in sensor_data:
-            dest = 'airwise_data'
 
-        if dest == 'battery_data':
-            insert_query = """
+        insert_query = """
                 INSERT INTO battery_data (node, topic_id, longname, voltage, battery_level, pst_time)
                 VALUES (%s, %s, %s, %s, %s, %s)
             """
 
-            params = (
-                sensor_data['node'],
-                sensor_data['topic_id'],
-                sensor_data['longname'],
-                sensor_data.get('voltage'),
-                sensor_data.get('battery_level'),
-                sensor_data.get('pst_time'),
-            )
-            pg_cursor.execute(insert_query, params)
-            pg_client.commit()
+        params = (
+            battery_data['node'],
+            battery_data['topic_id'],
+            battery_data['longname'],
+            battery_data.get('voltage'),
+            battery_data.get('battery_level'),
+            battery_data.get('pst_time'),
+        )
+        pg_cursor.execute(insert_query, params)
+        pg_client.commit()
 
-            print(f"Battery inserted -> node {sensor_data['node']}, "
-                f"V={sensor_data.get('voltage')}, "
-                f"Lvl={sensor_data.get('battery_level')}")
+        print(f"Battery inserted -> node {battery_data['node']}, "
+            f"V={battery_data.get('voltage')}, "
+            f"Lvl={battery_data.get('battery_level')}")
                    
-        elif dest == 'airwise_data':
-            insert_query = """
-                INSERT INTO airwise_data (node, topic_id, longname, pressure, gas, iaq, humidity, temperature, timestamp_node, pst_time)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        insert_query = """
+                INSERT INTO airwise_data (node, topic_id, longname, temperature, humidity, pressure, gas, pm1_0, pm2_5, pm10, timestamp_node, pst_time)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
-            params = (
+        params = (
                 sensor_data['node'],
                 sensor_data['topic_id'],
                 sensor_data['longname'],
+                sensor_data.get('temperature'),
+                sensor_data.get('humidity'),
                 sensor_data.get('pressure'),
                 sensor_data.get('gas'),
-                sensor_data.get('iaq'),
-                sensor_data.get('humidity'),
-                sensor_data.get('temperature'),
+                sensor_data.get('pm1_0'),
+                sensor_data.get('pm2_5'),
+                sensor_data.get('pm10'),
                 sensor_data.get('timestamp_node'),
                 sensor_data.get('pst_time'),
-            )
-            pg_cursor.execute(insert_query, params)
-            pg_client.commit()
-            print(f"Env inserted -> node {sensor_data['node']}, "
+        )
+        pg_cursor.execute(insert_query, params)
+        pg_client.commit()
+        print(f"Env inserted -> node {sensor_data['node']}, "
                   f"T={sensor_data.get('temperature')}°C, "
-                  f"RH={sensor_data.get('humidity')}%")
-        else:
-            print("Unknown destination table; skipping insert.")
-
+                  f"RH={sensor_data.get('humidity')}%"f", "
+                  f"PM2.5={sensor_data.get('pm2_5')}µg/m3")
 
         print()
         pg_cursor.close()
@@ -284,7 +320,9 @@ def on_message(client, userdata, msg):
         print("Here is the payload: ", payload)
         
         #parse data
-        sensor_data = parse_sensor_data(payload)
+        sensor_data = parse_text_data(payload)
+        battery_data = parse_battery_data(payload)
+
 
         print()
         print("Node mapping: ", node_dict)
@@ -292,7 +330,7 @@ def on_message(client, userdata, msg):
 
         #insert data
         if sensor_data:
-            insert_to_database(sensor_data)
+            insert_to_database(sensor_data, battery_data)
         else:
             print("Failed to parse sensor data, skipping database insertion")
             print()
