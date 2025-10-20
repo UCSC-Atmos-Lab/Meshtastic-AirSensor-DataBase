@@ -38,9 +38,8 @@ topics = [
 
 # Initialize node_dict with known nodes
 node_dict = {
-"""
-ENTER KNOWN NODES HERE
-"""
+    2102560276: ('!7d528614', 'Farm6'),
+
 }
 
 #payload":{"text":"23.35,41.69,985.34,185623.00,1.00,1.00,1.00,4.98,148.62\n"
