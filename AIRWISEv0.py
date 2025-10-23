@@ -31,9 +31,10 @@ node_alerts_sent = {}
 
 # Topics
 topics = [
-    "msh/US/2/json/SensorData/!ba69aec8"
+    # "msh/US/2/json/SensorData/!ba69aec8"
     # "msh/US/2/json/SensorData/!ba6562e4"
     # "msh/US/2/json/SensorData/!7d528614"
+    "msh/US/2/json/SensorData/!ba654d80"
 ]
 
 # Initialize node_dict with known nodes
@@ -208,7 +209,8 @@ def insert_to_database(sensor_data):
             pg_client.commit()
             print(f"Env inserted -> node {sensor_data['node']}, "
                   f"T={sensor_data.get('temperature')}°C, "
-                  f"RH={sensor_data.get('humidity')}%")
+                  f"RH={sensor_data.get('humidity')}%"
+                  f" Time={sensor_data.get('pst_time')}")
         else:
             print("Unknown destination table; skipping insert.")
 
