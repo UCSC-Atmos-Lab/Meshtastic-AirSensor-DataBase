@@ -284,6 +284,7 @@ def on_message(client, userdata, msg):
 
 
         print("Here is the payload: ", payload)
+        print("Current time: ", datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z'))
         
         #parse data
         sensor_data = parse_sensor_data(payload)
