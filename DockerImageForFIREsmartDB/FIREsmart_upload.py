@@ -9,6 +9,12 @@ import threading
 import requests
 
 # MQTT broker details
+# broker_address = "mqtt.meshtastic.org"
+# port = 1883
+# pg_options = {"user":"postgres", "host":"localhost", "database":"eureka", "password":"Charan", "port":5432}
+# username = "meshdev"
+# password = "large4cats"
+
 assert os.environ.get("mqtt_broker_address"), "no mqtt_broker_adress specified, check .env file"
 broker_address = os.environ.get("mqtt_broker_address")
 assert os.environ.get("mqtt_port"), "no mqtt_port specified, check .env file"
@@ -22,11 +28,23 @@ assert os.environ.get("pg_host"), "no pg_host specified, check .env file"
 assert os.environ.get("pg_database"), "no pg_database specified, check .env file"
 assert os.environ.get("pg_password"), "no pg_password specified, check .env file"
 assert os.environ.get("pg_port"), "no pg_port specified, check .env file"
-pg_options = {"user":os.environ.get("pg_user"), "host":os.environ.get("pg_host"), "database":os.environ.get("pg_database"), "password":os.environ.get("pg_password"), "port":int(os.environ.get("pg_port"))}
+pg_options = {
+    "user": os.environ.get("pg_user"),
+    "host": os.environ.get("pg_host"),
+    "database": os.environ.get("pg_database"),
+    "password": os.environ.get("pg_password"),
+    "port": int(os.environ.get("pg_port")),
+}
+
+
 
 # Ntfy
-NTFY_URL = "https://ntfy.sh/FIRESMART_Alerts"
-OFFLINE_THRESHOLD_MINUTES = 150
+# NTFY_URL = "https://ntfy.sh/FIRESMART_Alerts"
+# OFFLINE_THRESHOLD_MINUTES = 100 # every 100 minutes right now because nodealert sends 1 message every 15 minutes
+
+NTFY_URL = os.environ.get("ntfy_url", "https://ntfy.sh/FIRESMART_Alerts")
+OFFLINE_THRESHOLD_MINUTES = int(os.environ.get("offline_threshold_minutes", "100"))
+
 
 
 # maps nodes
@@ -40,9 +58,22 @@ node_alerts_sent = {}
 
 # Topics
 topics = [
-    "msh/US/2/json/SensorData/!ba69aec8" 
-    
+    # "msh/US/2/json/SensorData/!ba69aec8"
+    # "msh/US/2/json/SensorData/!ba6562e4"
+    # "msh/US/2/json/SensorData/!7d528614"
+    "msh/US/2/json/SensorData/!ba654d80"
 ]
+
+# Initialize node_dict with known nodes
+node_dict = {
+
+    3127201152: ('!ba654d80', 'Farm1'),
+    3127206628: ('!ba6562e4', 'Farm2'),
+    3127202788: ('!ba6553e4', 'Farm4'),
+    3127488536: ('!ba69b018', 'Farm3'),
+    3127488200: ('!ba69aec8', 'Farm5'),
+    2102560276: ('!7d528614', 'Farm6'),
+}
 
 def send_ntfy_alert(node_id, longname=None):
     try:
@@ -52,7 +83,7 @@ def send_ntfy_alert(node_id, longname=None):
             message = f" Node OFFLINE: **{node_id}** - No message for {OFFLINE_THRESHOLD_MINUTES} minutes"
 
 
-        response = requests.post(NTFY_URL, data=message.encode('utf-8'), headers={"Title": "FIRESMART Node Alert", "Priority": "high", "Tags": "warning, rotating_light", "Markdown": "yes"})
+        response = requests.post(NTFY_URL, data=message.encode('utf-8'), headers={"Title": "FIRESMART Node Alert", "Priority": "high", "Tags": "rotating_light", "Markdown": "yes"})
         #could add an image in the message of where the node is located on the farm, once we place the nodes...
 
         if response.status_code == 200:
@@ -111,15 +142,29 @@ def parse_sensor_data(payload):
         
         payload_data = data.get('payload', {})
 
-        # ignore packet if it is power telemetry (for now)
-        if 'battery_level' in payload_data:
-            print("Power telemetry packet, ignoring")
-            return None
+
 
 
         # get node info from dictionary
         topic_info = node_dict.get(node, (None, None))
 
+
+        #save telemetry data
+        if 'battery_level' in payload_data:
+            print("Power telemetry packet, SAVING")
+            return {
+                'node': node,
+                'topic_id': topic_info[0],
+                'longname': topic_info[1],
+                'voltage': payload_data.get('voltage', None),
+                'battery_level': payload_data.get('battery_level', None),
+                'timestamp_node': data.get('timestamp', None),
+                'pst_time': datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
+
+                
+                
+
+            }
 
         return {
             'node': node,
@@ -131,8 +176,7 @@ def parse_sensor_data(payload):
             'humidity': payload_data.get('relative_humidity', None),
             'temperature': payload_data.get('temperature', None),
             'timestamp_node': data.get('timestamp', None),
-            
-            # add accurate time later datetime.utcnow()
+            'pst_time': datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
         }
         
     except (json.JSONDecodeError, ValueError, KeyError) as e:
@@ -144,28 +188,61 @@ def insert_to_database(sensor_data):
     try:
         pg_client = psycopg2.connect(**pg_options)
         pg_cursor = pg_client.cursor()
-        
-        insert_query = """
-            INSERT INTO airwise_data (node, topic_id, longname, pressure, gas, iaq, humidity, temperature, timestamp_node) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
+        dest = None
+        if 'battery_level' in sensor_data:
+            dest = 'battery_data'
+        elif 'temperature' in sensor_data:
+            dest = 'airwise_data'
 
-        pg_cursor.execute(insert_query, (
-            sensor_data['node'],
-            sensor_data['topic_id'],
-            sensor_data['longname'],
-            sensor_data['pressure'],
-            sensor_data['gas'],
-            sensor_data['iaq'],
-            sensor_data['humidity'],
-            sensor_data['temperature'],
-            sensor_data['timestamp_node']
-        ))
-        
-        pg_client.commit()
-        print(f"Data successfully inserted into database - Node: {sensor_data['node']}, Temp: {sensor_data['temperature']}°C, Humidity: {sensor_data['humidity']}%")
+        if dest == 'battery_data':
+            insert_query = """
+                INSERT INTO battery_data (node, topic_id, longname, voltage, battery_level, pst_time)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+
+            params = (
+                sensor_data['node'],
+                sensor_data['topic_id'],
+                sensor_data['longname'],
+                sensor_data.get('voltage'),
+                sensor_data.get('battery_level'),
+                sensor_data.get('pst_time'),
+            )
+            pg_cursor.execute(insert_query, params)
+            pg_client.commit()
+
+            print(f"Battery inserted -> node {sensor_data['node']}, "
+                f"V={sensor_data.get('voltage')}, "
+                f"Lvl={sensor_data.get('battery_level')}")
+                   
+        elif dest == 'airwise_data':
+            insert_query = """
+                INSERT INTO airwise_data (node, topic_id, longname, pressure, gas, iaq, humidity, temperature, timestamp_node, pst_time)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            params = (
+                sensor_data['node'],
+                sensor_data['topic_id'],
+                sensor_data['longname'],
+                sensor_data.get('pressure'),
+                sensor_data.get('gas'),
+                sensor_data.get('iaq'),
+                sensor_data.get('humidity'),
+                sensor_data.get('temperature'),
+                sensor_data.get('timestamp_node'),
+                sensor_data.get('pst_time'),
+            )
+            pg_cursor.execute(insert_query, params)
+            pg_client.commit()
+            print(f"Env inserted -> node {sensor_data['node']}, "
+                  f"T={sensor_data.get('temperature')}°C, "
+                  f"RH={sensor_data.get('humidity')}%"
+                  f" Time={sensor_data.get('pst_time')}")
+        else:
+            print("Unknown destination table; skipping insert.")
+
+
         print()
-
         pg_cursor.close()
         pg_client.close()
         
@@ -175,6 +252,7 @@ def insert_to_database(sensor_data):
             pg_client.rollback()
     except Exception as e:
         print(f"Unexpected error during database insertion: {e}")
+
     finally:
         # close connections 
         if 'pg_cursor' in locals() and pg_cursor:
@@ -233,6 +311,7 @@ def on_message(client, userdata, msg):
 
 
         print("Here is the payload: ", payload)
+        print("Current time: ", datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z'))
         
         #parse data
         sensor_data = parse_sensor_data(payload)
@@ -257,8 +336,9 @@ def on_disconnect(client, userdata, rc, properties=None, reason_code=None):
         print("Disconnected successfully")
     else:
         print("Unexpected disconnection with result code:", rc)
+        requests.post(NTFY_URL, data=b"Disconnected, (laptop closed) ", headers={"Title":"FIRESMART Monitor OFFLINE","Priority":"default","Tags":"warning"})
 
-# Test database connection on startup
+
 def test_database_connection():
     try:
         pg_client = psycopg2.connect(**pg_options)
@@ -313,7 +393,8 @@ if __name__ == "__main__":
 
 
     # online alert- don't need if trying to get under max 250 messages per day
-    requests.post(NTFY_URL, data=b"Monitor started: subscribed and listening.", headers={"Title":"FIRESMART Monitor Online","Priority":"default","Tags":"white_check_mark"})
+    topics_str = ", ".join(topics)
+    requests.post(NTFY_URL,data=f"Monitor started: subscribed and listening to {topics_str}".encode("utf-8"), headers={"Title": "FIRESMART Monitor Online", "Priority": "default", "Tags": "white_check_mark"},)
 
 
     try:
@@ -321,7 +402,12 @@ if __name__ == "__main__":
         client.loop_forever()
     except KeyboardInterrupt:
         print("Script interrupted by user")
+        requests.post(NTFY_URL, data=b"Keyboard interrupt, disconnecting", headers={"Title":"FIRESMART Monitor OFFLINE","Priority":"high","Tags":"warning"})
+
         client.disconnect()
     except Exception as e:
         print(f"An error occurred: {e}")
+        requests.post(NTFY_URL, data=b"Error occurred: disconnecting", headers={"Title":"FIRESMART Monitor OFFLINE","Priority":"high","Tags":"warning"})
+
         client.disconnect()
+        
