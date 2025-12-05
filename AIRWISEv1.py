@@ -10,8 +10,9 @@ import requests
 
 # MQTT broker details
 broker_address = "mqtt.meshtastic.org"
+
 port = 1883
-pg_options = {"user":"postgres", "host":"localhost", "database":"eureka", "password":"Charan", "port":5432}
+pg_options = {"user":"postgres", "host":"localhost", "database":"eureka", "password":"charan&987", "port":5432}
 username = "meshdev"
 password = "large4cats"
 
@@ -229,8 +230,8 @@ def insert_to_database(sensor_data, battery_data):
         if(sensor_data):
 
             insert_query = """
-                INSERT INTO airwise_data (node, topic_id, longname, temperature, humidity, pressure, gas, pm1_0, pm2_5, pm10, timestamp_node, pst_time)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO airwise_datav1 (node, topic_id, longname, temperature, humidity, pressure, gas, pm1_0, pm2_5, pm10, bus_voltage, current_mA, timestamp_node, pst_time)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             params = (
                 sensor_data['node'],
@@ -243,15 +244,19 @@ def insert_to_database(sensor_data, battery_data):
                 sensor_data.get('pm1_0'),
                 sensor_data.get('pm2_5'),
                 sensor_data.get('pm10'),
+                sensor_data.get('bus_voltage'),
+                sensor_data.get('current_mA'),
                 sensor_data.get('timestamp_node'),
                 sensor_data.get('pst_time'),
         )
             pg_cursor.execute(insert_query, params)
             pg_client.commit()
             print(f"Env inserted -> node {sensor_data['node']}, "
-                  f"T={sensor_data.get('temperature')}°C, "
-                  f"RH={sensor_data.get('humidity')}%, "
-                  f"PM2.5={sensor_data.get('pm2_5')}µg/m3")
+                f"T={sensor_data.get('temperature')}°C, "
+                f"RH={sensor_data.get('humidity')}%, "
+                f"PM2.5={sensor_data.get('pm2_5')}µg/m3, "
+                f"BusV={sensor_data.get('bus_voltage')}, "
+                f"I_mA={sensor_data.get('current_mA')}")
         else:
             print("Skipping sensor insertion, no sensor data received")
         print()
@@ -314,6 +319,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
 
 def on_message(client, userdata, msg):
     print(f"Received message on topic: {msg.topic}")
+    print(f"Current time: {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')}")
     try:
         #decode payload
         payload = msg.payload.decode()
@@ -391,15 +397,35 @@ if __name__ == "__main__":
     print("Started heartbeat monitoring thread")
     print(node_dict)
     
+    # client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    # client.username_pw_set(username, password)
+
+    # client.on_connect = on_connect
+    # client.on_message = on_message
+    # client.on_disconnect = on_disconnect
+
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.username_pw_set(username, password)
+
+    # Make Paho wait longer for the TCP connect on slow networks
+    client._connect_timeout = 20  # seconds; 10 would probably be enough, 20 is safe
+    print("Using MQTT connect timeout:", client._connect_timeout)
 
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_disconnect = on_disconnect
 
     print(f"Connecting to {broker_address}:{port}")
-    client.connect(broker_address, port, 60)
+    client.connect(broker_address, port, 60)  # keepalive is still 60, this is fine
+
+
+    # print(f"Connecting to {broker_address}:{port}")
+    # client.connect(broker_address, port, 60)
+
+
+    # print(f"Connecting to {broker_address}:{port}")
+    # client.connect(broker_address, port, 60, bind_address="172.20.10.2")
+
 
 
     # online alert- don't need if trying to get under max 250 messages per day
